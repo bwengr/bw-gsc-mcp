@@ -1,0 +1,19 @@
+{
+  "name": "bw-gsc-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Google Search Console - query rankings, clicks, impressions for bwengr.com",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": ["mcp", "google-search-console", "seo", "bwengr"],
+  "author": "B+W Engineering <brandon@bwengr.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "googleapis": "^140.0.0",
+    "dotenv": "^16.4.0"
+  }
+}
