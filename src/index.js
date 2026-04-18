@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { google } from 'googleapis';
+import { z } from 'zod';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -15,6 +16,16 @@ const SCOPES = ['https://www.googleapis.com/auth/webmasters.readonly'];
 
 let oauth2Client;
 let searchconsole;
+
+function getDates(startDate, endDate) {
+  const end = endDate || new Date().toISOString().split('T')[0];
+  const start = startDate || (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 28);
+    return d.toISOString().split('T')[0];
+  })();
+  return { start, end };
+}
 
 function loadTokens() {
   if (fs.existsSync(TOKENS_PATH)) {
@@ -65,28 +76,27 @@ const server = new McpServer({
   version: '1.0.0',
 });
 
-server.setToolRequestHandlers(
+server.registerTool(
+  'getTopQueries',
   {
-    name: 'getTopQueries',
     description: 'Get top search queries by clicks from Google Search Console',
-    inputSchema: {
-      startDate: { type: 'string', description: 'Start date YYYY-MM-DD', default: '28daysAgo' },
-      endDate: { type: 'string', description: 'End date YYYY-MM-DD', default: 'today' },
-      rowLimit: { type: 'number', description: 'Max rows to return', default: 25 },
-    },
+    inputSchema: z.object({
+      startDate: z.string().optional().describe('Start date YYYY-MM-DD'),
+      endDate: z.string().optional().describe('End date YYYY-MM-DD'),
+      rowLimit: z.number().optional().describe('Max rows to return'),
+    }),
   },
   async (args) => {
     if (!searchconsole) await authenticate();
 
     const siteUrl = process.env.GSC_SITE_URL;
-    const endDate = args.endDate || new Date().toISOString().split('T')[0];
-    const startDate = args.startDate || '28daysAgo';
+    const { start, end } = getDates(args.startDate, args.endDate);
 
     const response = await searchconsole.searchanalytics.query({
       siteUrl,
       requestBody: {
-        startDate,
-        endDate,
+        startDate: start,
+        endDate: end,
         dimensions: ['query'],
         rowCount: args.rowLimit || 25,
         aggregationType: 'byPage',
@@ -115,28 +125,27 @@ server.setToolRequestHandlers(
   }
 );
 
-server.setToolRequestHandlers(
+server.registerTool(
+  'getPagePerformance',
   {
-    name: 'getPagePerformance',
     description: 'Get performance data for specific pages',
-    inputSchema: {
-      pageUrl: { type: 'string', description: 'Specific page URL to query' },
-      startDate: { type: 'string', description: 'Start date YYYY-MM-DD', default: '28daysAgo' },
-      endDate: { type: 'string', description: 'End date YYYY-MM-DD', default: 'today' },
-    },
+    inputSchema: z.object({
+      pageUrl: z.string().describe('Specific page URL to query'),
+      startDate: z.string().optional().describe('Start date YYYY-MM-DD'),
+      endDate: z.string().optional().describe('End date YYYY-MM-DD'),
+    }),
   },
   async (args) => {
     if (!searchconsole) await authenticate();
 
     const siteUrl = process.env.GSC_SITE_URL;
-    const endDate = args.endDate || new Date().toISOString().split('T')[0];
-    const startDate = args.startDate || '28daysAgo';
+    const { start, end } = getDates(args.startDate, args.endDate);
 
     const response = await searchconsole.searchanalytics.query({
       siteUrl,
       requestBody: {
-        startDate,
-        endDate,
+        startDate: start,
+        endDate: end,
         dimensions: ['query', 'page'],
         rowCount: 100,
         aggregationType: 'byPage',
@@ -167,27 +176,26 @@ server.setToolRequestHandlers(
   }
 );
 
-server.setToolRequestHandlers(
+server.registerTool(
+  'getSiteSummary',
   {
-    name: 'getSiteSummary',
     description: 'Get overall site search performance summary',
-    inputSchema: {
-      startDate: { type: 'string', description: 'Start date YYYY-MM-DD', default: '28daysAgo' },
-      endDate: { type: 'string', description: 'End date YYYY-MM-DD', default: 'today' },
-    },
+    inputSchema: z.object({
+      startDate: z.string().optional().describe('Start date YYYY-MM-DD'),
+      endDate: z.string().optional().describe('End date YYYY-MM-DD'),
+    }),
   },
   async (args) => {
     if (!searchconsole) await authenticate();
 
     const siteUrl = process.env.GSC_SITE_URL;
-    const endDate = args.endDate || new Date().toISOString().split('T')[0];
-    const startDate = args.startDate || '28daysAgo';
+    const { start, end } = getDates(args.startDate, args.endDate);
 
     const response = await searchconsole.searchanalytics.query({
       siteUrl,
       requestBody: {
-        startDate,
-        endDate,
+        startDate: start,
+        endDate: end,
         rowCount: 1,
       },
     });
@@ -200,7 +208,7 @@ server.setToolRequestHandlers(
           type: 'text',
           text: JSON.stringify(
             {
-              dateRange: `${startDate} to ${endDate}`,
+              dateRange: `${start} to ${end}`,
               totalClicks: totals.clicks,
               totalImpressions: totals.impressions,
               averageCtr: (totals.ctr * 100).toFixed(2) + '%',
@@ -215,13 +223,13 @@ server.setToolRequestHandlers(
   }
 );
 
-server.setToolRequestHandlers(
+server.registerTool(
+  'getRankingChanges',
   {
-    name: 'getRankingChanges',
     description: 'Find pages with significant ranking changes',
-    inputSchema: {
-      days: { type: 'number', description: 'Number of days to compare', default: 28 },
-    },
+    inputSchema: z.object({
+      days: z.number().optional().describe('Number of days to compare'),
+    }),
   },
   async (args) => {
     if (!searchconsole) await authenticate();
@@ -234,12 +242,16 @@ server.setToolRequestHandlers(
     const period1Start = new Date(period2Start);
     period1Start.setDate(period1Start.getDate() - days);
 
+    const period1EndStr = period2Start.toISOString().split('T')[0];
+    const period2EndStr = new Date().toISOString().split('T')[0];
+    const period1StartStr = period1Start.toISOString().split('T')[0];
+
     const [period1, period2] = await Promise.all([
       searchconsole.searchanalytics.query({
         siteUrl,
         requestBody: {
-          startDate: period1Start.toISOString().split('T')[0],
-          endDate: period2Start.toISOString().split('T')[0],
+          startDate: period1StartStr,
+          endDate: period1EndStr,
           dimensions: ['page'],
           rowCount: 1000,
         },
@@ -247,8 +259,8 @@ server.setToolRequestHandlers(
       searchconsole.searchanalytics.query({
         siteUrl,
         requestBody: {
-          startDate: period2Start.toISOString().split('T')[0],
-          endDate: new Date().toISOString().split('T')[0],
+          startDate: period1EndStr,
+          endDate: period2EndStr,
           dimensions: ['page'],
           rowCount: 1000,
         },
